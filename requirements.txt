@@ -1,0 +1,3 @@
+# PyQt6 is installed system-wide (python-pyqt6 from pacman)
+# Venv must be created with --system-site-packages
+psutil>=5.9.0

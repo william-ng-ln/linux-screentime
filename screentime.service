@@ -1,0 +1,16 @@
+[Unit]
+Description=Screen Time Admin UI
+After=graphical-session.target plasma-plasmashell.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/.venv/bin/python __INSTALL_DIR__/main.py
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=QT_QPA_PLATFORM=xcb
+
+[Install]
+WantedBy=graphical-session.target

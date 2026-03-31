@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Screen Time
+Name[vi]=Screen Time
+Comment=Quản lý thời gian sử dụng máy tính của trẻ
+Exec=__INSTALL_DIR__/.venv/bin/python __INSTALL_DIR__/main.py
+Icon=preferences-system-parental-controls
+Categories=Settings;
+StartupNotify=false
+NoDisplay=false

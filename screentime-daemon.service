@@ -1,0 +1,13 @@
+[Unit]
+Description=Screen Time Parental Control Daemon
+After=multi-user.target
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/.venv/bin/python __INSTALL_DIR__/daemon.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
