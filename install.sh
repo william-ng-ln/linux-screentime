@@ -35,39 +35,39 @@ python3 -c "from PyQt6.QtWidgets import QApplication" 2>/dev/null || {
 systemctl stop screentime-daemon.service 2>/dev/null || true
 
 # Copy app files to /opt/screentime
-echo "[1/6] Sao chép files vào $INSTALL_DIR..."
+echo "[1/7] Sao chép files vào $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
 # Clean old install then copy fresh
 find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \
   ! -name '.venv' ! -name 'screentime.db' -exec rm -rf {} +
 cp -r "$DIR/screentime" "$DIR/main.py" "$DIR/daemon.py" \
       "$DIR/screentime.service" "$DIR/screentime-daemon.service" \
-      "$DIR/screentime-admin.desktop" \
+      "$DIR/screentime-admin.desktop" "$DIR/screentime.svg" \
       "$INSTALL_DIR/"
 
 # Create venv inside /opt/screentime
-echo "[2/6] Tạo virtual environment..."
+echo "[2/7] Tạo virtual environment..."
 if [ ! -d "$INSTALL_DIR/.venv" ]; then
   python3 -m venv --system-site-packages "$INSTALL_DIR/.venv"
 fi
 "$INSTALL_DIR/.venv/bin/pip" install -q psutil
 
 # Create DB directory — world-writable so any user can run the admin app
-echo "[3/6] Tạo thư mục dữ liệu..."
+echo "[3/7] Tạo thư mục dữ liệu..."
 mkdir -p /var/lib/screentime
 chmod 777 /var/lib/screentime
 [ -f /var/lib/screentime/screentime.db ] && chmod 666 /var/lib/screentime/screentime.db || true
 [ -f /var/lib/screentime/screentime.db-shm ] && chmod 666 /var/lib/screentime/screentime.db-shm || true
 
 # Install system daemon service
-echo "[4/6] Cài đặt system daemon service..."
+echo "[4/7] Cài đặt system daemon service..."
 sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
     "$INSTALL_DIR/screentime-daemon.service" > /etc/systemd/system/screentime-daemon.service
 systemctl daemon-reload
 systemctl enable --now screentime-daemon.service
 
 # Install admin GUI service for parent user
-echo "[5/6] Cài đặt admin GUI service cho $PARENT_USER..."
+echo "[5/7] Cài đặt admin GUI service cho $PARENT_USER..."
 SYSTEMD_USER_DIR="$PARENT_HOME/.config/systemd/user"
 mkdir -p "$SYSTEMD_USER_DIR"
 sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
@@ -78,8 +78,17 @@ sudo -u "$PARENT_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$PARENT_USER")" \
 sudo -u "$PARENT_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$PARENT_USER")" \
   systemctl --user enable --now screentime.service
 
+# Install app icon into hicolor icon theme
+echo "[6/7] Cài đặt icon ứng dụng..."
+ICON_DIR="/usr/share/icons/hicolor/scalable/apps"
+mkdir -p "$ICON_DIR"
+cp "$INSTALL_DIR/screentime.svg" "$ICON_DIR/screentime.svg"
+# Refresh icon caches so KDE/Qt picks up the new icon immediately
+gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+kbuildsycoca6 2>/dev/null || kbuildsycoca5 2>/dev/null || true
+
 # Install .desktop file globally (and remove any old per-user copy)
-echo "[6/6] Cài đặt shortcut start menu..."
+echo "[7/7] Cài đặt shortcut start menu..."
 rm -f "$PARENT_HOME/.local/share/applications/screentime-admin.desktop"
 mkdir -p /usr/local/share/applications
 sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \

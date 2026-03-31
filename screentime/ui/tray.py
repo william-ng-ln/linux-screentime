@@ -4,17 +4,23 @@ from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
 from PyQt6.QtCore import QSize, Qt
 
 
-def _make_tray_icon() -> QIcon:
-    """Create a simple clock-face icon for the tray."""
-    # Try system theme icon first
-    icon = QIcon.fromTheme("preferences-system-time")
-    if not icon.isNull():
-        return icon
-    icon = QIcon.fromTheme("clock")
+def _app_icon() -> QIcon:
+    """Load the screentime icon: installed theme icon → fallback drawn icon."""
+    import os
+    # 1. System-installed theme icon (set up by install.sh)
+    icon = QIcon.fromTheme("screentime")
     if not icon.isNull():
         return icon
 
-    # Fallback: draw a simple icon
+    # 2. SVG next to this package (development / uninstalled)
+    pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    svg_path = os.path.join(pkg_root, "screentime.svg")
+    if os.path.isfile(svg_path):
+        icon = QIcon(svg_path)
+        if not icon.isNull():
+            return icon
+
+    # 3. Drawn fallback
     pix = QPixmap(32, 32)
     pix.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pix)
@@ -33,7 +39,7 @@ def _make_tray_icon() -> QIcon:
 class TrayIcon(QSystemTrayIcon):
     def __init__(self, on_open_admin, on_quit, parent=None):
         super().__init__(parent)
-        self.setIcon(_make_tray_icon())
+        self.setIcon(_app_icon())
         self.setToolTip("Screen Time")
 
         menu = QMenu()

@@ -45,32 +45,42 @@ def _remove_pid():
         pass
 
 
-def _make_icon():
-    """Create a simple clock icon programmatically (no image file needed)."""
-    from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QIcon
+def _load_app_icon():
+    """Load the screentime icon: installed theme → SVG file → drawn fallback."""
+    import os
+    from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QPen
     from PyQt6.QtCore import Qt
+
+    # 1. System-installed theme icon (set up by install.sh)
+    icon = QIcon.fromTheme("screentime")
+    if not icon.isNull():
+        return icon
+
+    # 2. SVG next to main.py (development)
+    svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screentime.svg")
+    if os.path.isfile(svg_path):
+        icon = QIcon(svg_path)
+        if not icon.isNull():
+            return icon
+
+    # 3. Drawn fallback
     pix = QPixmap(64, 64)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    # Blue circle background
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QBrush(QColor("#1565c0")))
     p.drawEllipse(2, 2, 60, 60)
-    # White clock face
     p.setBrush(QBrush(QColor("white")))
     p.drawEllipse(8, 8, 48, 48)
-    # Clock hands (pointing to ~10:10 for a classic "open" look)
     pen = QPen(QColor("#1565c0"), 5)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
-    cx, cy = 32, 32
-    p.drawLine(cx, cy, cx - 10, cy - 14)  # hour hand (~10)
-    p.drawLine(cx, cy, cx + 11, cy - 13)  # minute hand (~2)
-    # Center dot
+    p.drawLine(32, 32, 22, 20)
+    p.drawLine(32, 32, 43, 19)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QBrush(QColor("#1565c0")))
-    p.drawEllipse(cx - 3, cy - 3, 6, 6)
+    p.setBrush(QBrush(QColor("#0d47a1")))
+    p.drawEllipse(29, 29, 6, 6)
     p.end()
     return QIcon(pix)
 
@@ -93,7 +103,7 @@ def main():
     app.setApplicationName("Screen Time")
     app.setQuitOnLastWindowClosed(False)
 
-    icon = _make_icon()
+    icon = _load_app_icon()
     app.setWindowIcon(icon)
 
     db = Database(config.DB_PATH)

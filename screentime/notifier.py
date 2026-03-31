@@ -1,10 +1,20 @@
+import os
 import subprocess
 import logging
+import time
 import pwd
 
 import psutil
 
 log = logging.getLogger(__name__)
+
+_PKG_DIR = os.path.dirname(os.path.abspath(__file__))   # .../screentime/
+_ROOT_DIR = os.path.dirname(_PKG_DIR)                   # .../opt/screentime/
+_VENV_PYTHON = os.path.join(_ROOT_DIR, ".venv", "bin", "python3")
+_OVERLAY_SCRIPT = os.path.join(_PKG_DIR, "overlay.py")
+
+# Cooldown: don't show another overlay for the same app within this many seconds
+_OVERLAY_COOLDOWN = 30.0
 
 
 def _get_user_session_env(username: str) -> dict:
@@ -29,6 +39,45 @@ def _get_user_session_env(username: str) -> dict:
     except Exception as e:
         log.debug("get_user_session_env error: %s", e)
     return {}
+
+
+def _show_overlay_as_user(username: str, ntype: str, app_name: str):
+    """Launch the fullscreen overlay on the kid's desktop session (call from root)."""
+    env = _get_user_session_env(username)
+    if not env:
+        log.warning("Could not find session env for user %s, skipping overlay", username)
+        return
+
+    display_env = {
+        k: env[k]
+        for k in ["DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+                  "XDG_RUNTIME_DIR", "WAYLAND_SOCKET"]
+        if k in env
+    }
+    if not display_env:
+        return
+
+    python = _VENV_PYTHON if os.path.isfile(_VENV_PYTHON) else "python3"
+
+    try:
+        pw = pwd.getpwnam(username)
+        full_env = {
+            **display_env,
+            "HOME": pw.pw_dir,
+            "USER": username,
+            "LOGNAME": username,
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+        }
+        subprocess.Popen(
+            [python, _OVERLAY_SCRIPT, "--type", ntype, "--app", app_name],
+            env=full_env,
+            user=pw.pw_uid,
+        )
+        log.info("Overlay launched: type=%s app=%r user=%s", ntype, app_name, username)
+    except Exception as e:
+        log.warning("Overlay launch failed (%s), falling back to notify-send: %s", ntype, e)
+        _notify_as_user(username, "Hết giờ!" if ntype == "time_up" else "Ứng dụng bị chặn",
+                        app_name, urgency="critical", icon="dialog-warning")
 
 
 def _notify_as_user(username: str, summary: str, body: str,
@@ -74,24 +123,35 @@ class DaemonNotifier:
     """Duck-typed replacement for EnforcerSignals for use in the root daemon (no Qt)."""
 
     def __init__(self, username: str):
-        self.warn_approaching = _FakeSignal(
-            lambda name, mins: _notify_as_user(
-                username, "Sắp hết giờ",
-                f'"{name}" còn {mins} phút hôm nay.',
-                urgency="normal", icon="appointment-soon",
-            )
+        self._username = username
+        # Cooldown: {app_name: last_notify_timestamp} — prevents overlay spam
+        self._last_overlay: dict[str, float] = {}
+
+        self.warn_approaching = _FakeSignal(self._on_warn)
+        self.time_up = _FakeSignal(self._on_time_up)
+        self.app_blocked = _FakeSignal(self._on_blocked)
+
+    def _cooldown_ok(self, app_name: str) -> bool:
+        """Return True if enough time has passed since the last overlay for this app."""
+        now = time.monotonic()
+        last = self._last_overlay.get(app_name, 0.0)
+        if now - last >= _OVERLAY_COOLDOWN:
+            self._last_overlay[app_name] = now
+            return True
+        return False
+
+    def _on_warn(self, name: str, mins: int):
+        _notify_as_user(
+            self._username,
+            "Sắp hết giờ",
+            f'"{name}" còn {mins} phút hôm nay.',
+            urgency="normal", icon="appointment-soon",
         )
-        self.time_up = _FakeSignal(
-            lambda name: _notify_as_user(
-                username, "Hết giờ!",
-                f'"{name}" đã hết thời gian sử dụng hôm nay.',
-                urgency="critical", icon="dialog-warning",
-            )
-        )
-        self.app_blocked = _FakeSignal(
-            lambda name: _notify_as_user(
-                username, "Ứng dụng bị chặn",
-                f'"{name}" không được phép sử dụng.',
-                urgency="critical", icon="dialog-error",
-            )
-        )
+
+    def _on_time_up(self, name: str):
+        if self._cooldown_ok(name):
+            _show_overlay_as_user(self._username, "time_up", name)
+
+    def _on_blocked(self, name: str):
+        if self._cooldown_ok(name):
+            _show_overlay_as_user(self._username, "blocked", name)

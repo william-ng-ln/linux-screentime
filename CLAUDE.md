@@ -193,6 +193,30 @@ journalctl --user -u screentime -f
 
 ---
 
+## App icon
+
+File `screentime.svg` trong project root. Install.sh copy vào `/usr/share/icons/hicolor/scalable/apps/screentime.svg` và chạy `gtk-update-icon-cache`.
+
+Thứ tự ưu tiên load icon (cả tray lẫn window):
+1. `QIcon.fromTheme("screentime")` — sau khi `install.sh` chạy
+2. File SVG cạnh `main.py` / package root — khi chạy từ source
+3. Icon vẽ bằng QPainter — fallback cuối cùng
+
+## Overlay thông báo
+
+File `screentime/overlay.py` — standalone Qt script (không import từ package screentime).
+
+- Được `DaemonNotifier` launch như subprocess với env của kid user
+- Python: `<install_dir>/.venv/bin/python3`, fallback về system `python3`
+- Nhận args: `--type blocked|time_up` và `--app "App Name"`
+- Hiển thị fullscreen với nền tối + card màu (đỏ = blocked, cam = time_up)
+- Countdown 6 giây → nút "Đã hiểu" mới active → auto-close sau 2 giây
+- Chặn Alt+F4 / keyboard dismiss trong lúc đang đếm ngược
+
+**Warn (5 phút còn lại):** vẫn dùng `notify-send` (ít gây phiền hơn)
+
+**Cooldown debounce:** `DaemonNotifier._last_overlay` track thời gian notify cuối cùng theo app — không hiện overlay lặp lại trong vòng 30 giây (`_OVERLAY_COOLDOWN`)
+
 ## Trạng thái hiện tại (2026-03-31)
 
 Đã hoàn thành:
@@ -201,14 +225,13 @@ journalctl --user -u screentime -f
 - [x] Giới hạn thời gian hàng ngày
 - [x] Lịch thời gian theo từng ngày trong tuần (ScheduleDialog)
 - [x] Theo dõi và hiển thị lịch sử sử dụng (biểu đồ)
-- [x] Cảnh báo 5 phút trước khi hết giờ
+- [x] Cảnh báo 5 phút trước khi hết giờ (notify-send)
+- [x] Fullscreen overlay khi bị block / hết giờ
 - [x] Waydroid app support (cmdline matching + `waydroid app stop`)
 - [x] Resolve shell script wrappers (Chrome, LibreOffice, v.v.)
-- [x] App icon (vẽ bằng QPainter)
+- [x] App icon SVG + theme install, dùng thống nhất ở tray + window + .desktop
 - [x] Lock khi đóng cửa sổ admin
 
 Có thể cải thiện thêm:
-- Thông báo đẹp hơn khi app bị block (fullscreen overlay thay vì notify-send)
 - Cho phép con tự xin thêm giờ (yêu cầu bố mẹ confirm)
 - Giới hạn thời gian theo tổng (tất cả app cộng lại), không chỉ per-app
-- App icon từ .desktop file thay vì icon đồng hồ cứng
