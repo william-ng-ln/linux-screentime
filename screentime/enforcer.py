@@ -162,9 +162,9 @@ class Enforcer(threading.Thread):
         if self.signals:
             self.signals.app_blocked.emit(app_name)
 
-    def _notify_warn(self, app_name: str, minutes: int):
+    def _notify_warn(self, app_name: str, minutes: int, app_icon: str = ""):
         if self.signals:
-            self.signals.warn_approaching.emit(app_name, minutes)
+            self.signals.warn_approaching.emit(app_name, minutes, app_icon)
 
     def _notify_time_up(self, app_name: str):
         if self.signals:
@@ -249,7 +249,7 @@ class Enforcer(threading.Thread):
                     elif used >= warn_secs and app.desktop_id not in self._warned_ids:
                         # 5-minute warning (once per day)
                         remaining = max(1, int((limit_secs - used) / 60))
-                        self._notify_warn(app.name, remaining)
+                        self._notify_warn(app.name, remaining, app.icon)
                         self._warned_ids.add(app.desktop_id)
 
             except (psutil.NoSuchProcess, psutil.AccessDenied):

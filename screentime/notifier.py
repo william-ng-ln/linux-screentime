@@ -80,6 +80,23 @@ def _show_overlay_as_user(username: str, ntype: str, app_name: str):
                         app_name, urgency="critical", icon="dialog-warning")
 
 
+def _resolve_notify_icon(icon: str, fallback: str = "appointment-soon") -> str:
+    """Return the best icon identifier to pass to notify-send.
+
+    - Absolute path that exists on disk → return as-is
+    - Non-empty theme name (no path separators) → return as-is (notification daemon resolves it)
+    - Anything else / empty → return fallback
+    """
+    if not icon:
+        return fallback
+    if os.path.isabs(icon):
+        return icon if os.path.isfile(icon) else fallback
+    # Theme name (e.g. "firefox", "org.mozilla.firefox")
+    if "/" not in icon:
+        return icon
+    return fallback
+
+
 def _notify_as_user(username: str, summary: str, body: str,
                     urgency: str = "normal", icon: str = "dialog-information"):
     """Run notify-send in the user's desktop session (call from root)."""
@@ -140,12 +157,13 @@ class DaemonNotifier:
             return True
         return False
 
-    def _on_warn(self, name: str, mins: int):
+    def _on_warn(self, name: str, mins: int, app_icon: str = ""):
         _notify_as_user(
             self._username,
             "Sắp hết giờ",
             f'"{name}" còn {mins} phút hôm nay.',
-            urgency="normal", icon="appointment-soon",
+            urgency="normal",
+            icon=_resolve_notify_icon(app_icon),
         )
 
     def _on_time_up(self, name: str):
