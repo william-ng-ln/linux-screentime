@@ -22,10 +22,26 @@ Chương trình kiểm soát thời gian sử dụng máy tính cho trẻ em, ch
 | `daemon.py` | root (systemd system service) | Giám sát tiến trình, kill app vi phạm |
 | `main.py` | parent user (systemd user service) | Qt admin GUI, system tray |
 
-### Database chia sẻ
+### Database (root-only)
 - SQLite tại `/var/lib/screentime/screentime.db`
-- Permissions: file `666`, thư mục `777` (cả root daemon lẫn parent user đều cần ghi)
+- Permissions: file `600`, thư mục `755` — chỉ root đọc/ghi được; con không thể xóa hay đọc file DB
 - **Không dùng WAL mode** — WAL tạo file `-shm` owned by root, user khác không ghi được
+
+### IPC (admin GUI ↔ daemon)
+- Admin GUI **không** truy cập DB trực tiếp — giao tiếp qua Unix socket `/run/screentime/control.sock`
+- Socket: `chmod 0666` (ai cũng kết nối được), bảo mật ở tầng protocol
+- **Token auth**: gọi `authenticate(password)` → nhận token ngẫu nhiên 64-char, TTL 8 giờ sliding
+- Lệnh đọc (get_all_apps, get_usage_history, …): không cần token
+- Lệnh ghi (set_app_allowed, set_setting, scan_apps, …): phải có token hợp lệ
+- `set_password` → revoke tất cả token hiện có
+- `AdminClient.logout()` được gọi khi lock cửa sổ admin → xóa token khỏi memory
+
+**Files IPC:**
+| File | Mô tả |
+|---|---|
+| `screentime/ipc.py` | Hằng số chung: SOCKET_PATH, TOKEN_TTL, READ_COMMANDS, WRITE_COMMANDS |
+| `screentime/ipc_server.py` | Thread trong daemon: nhận request, dispatch DB, quản lý token |
+| `screentime/ipc_client.py` | AdminClient: drop-in thay thế Database trong admin GUI |
 
 ### Cài đặt
 - Cài vào `/opt/screentime/`
@@ -46,11 +62,15 @@ screentime-admin.desktop           # .desktop file (toàn hệ thống, /usr/sha
 
 screentime/
   config.py                        # TARGET_USER, DB_PATH, POLL_INTERVAL, SYSTEM_PROCESS_NAMES
-  database.py                      # SQLite wrapper, AppRecord dataclass
+  database.py                      # SQLite wrapper, AppRecord dataclass (dùng bởi daemon)
   enforcer.py                      # Thread giám sát + kill tiến trình
   time_tracker.py                  # Theo dõi thời gian dùng app theo session
   desktop_scanner.py               # Parse .desktop files, resolve shell script wrappers
   notifier.py                      # DaemonNotifier — gửi notify-send đến màn hình của con
+  overlay.py                       # Fullscreen notification (chạy như subprocess dưới quyền kid)
+  ipc.py                           # Hằng số IPC chung (SOCKET_PATH, token TTL, command sets)
+  ipc_server.py                    # IpcServer thread trong daemon — nhận request, dispatch DB
+  ipc_client.py                    # AdminClient — drop-in thay Database trong admin GUI
   ui/
     admin_window.py                # AdminWindow (login + tabs), ScheduleDialog, AppsTab, HistoryTab
     tray.py                        # System tray icon

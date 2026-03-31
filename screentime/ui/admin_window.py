@@ -11,8 +11,7 @@ from PyQt6.QtGui import QFont, QIcon, QColor, QPainter, QPen, QBrush
 
 from datetime import date
 
-from ..database import Database, AppRecord
-from ..desktop_scanner import scan_desktop_files
+from ..database import AppRecord
 
 _DAYS_VN = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
 _DAYS_FULL = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
@@ -222,7 +221,14 @@ class LoginWidget(QWidget):
         outer.addWidget(card)
 
     def _login(self):
-        if self.db.check_password(self._pwd.text()):
+        try:
+            ok = self.db.check_password(self._pwd.text())
+        except RuntimeError as e:
+            self._error.setText(str(e))
+            self._pwd.clear()
+            self._pwd.setFocus()
+            return
+        if ok:
             self._pwd.clear()
             self._error.setText("")
             self.on_success()
@@ -375,9 +381,12 @@ class AppsTab(QWidget):
             self.refresh()
 
     def _scan(self):
-        count = scan_desktop_files(self.db)
-        self.refresh()
-        QMessageBox.information(self, "Quét xong", f"Đã tìm thấy {count} ứng dụng.")
+        try:
+            count = self.db.scan_apps()
+            self.refresh()
+            QMessageBox.information(self, "Quét xong", f"Đã tìm thấy {count} ứng dụng.")
+        except RuntimeError as e:
+            QMessageBox.warning(self, "Lỗi kết nối", str(e))
 
     def _allow_all(self):
         if QMessageBox.question(self, "Xác nhận", "Cho phép tất cả ứng dụng?") == QMessageBox.StandardButton.Yes:
@@ -767,6 +776,7 @@ class AdminWindow(QMainWindow):
 
     def _lock(self):
         self._authenticated = False
+        self.db.logout()
         self._stack.setCurrentIndex(0)
 
     def _on_tab_changed(self, idx):

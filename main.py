@@ -94,8 +94,7 @@ def main():
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtCore import QTimer
 
-    from screentime import config
-    from screentime.database import Database
+    from screentime.ipc_client import AdminClient
     from screentime.ui.tray import TrayIcon
     from screentime.ui.admin_window import AdminWindow
 
@@ -106,9 +105,7 @@ def main():
     icon = _load_app_icon()
     app.setWindowIcon(icon)
 
-    db = Database(config.DB_PATH)
-    db.initialize_schema()
-    log.info("Database: %s", config.DB_PATH)
+    db = AdminClient()
 
     admin_win = AdminWindow(db)
 

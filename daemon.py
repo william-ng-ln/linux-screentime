@@ -21,11 +21,16 @@ def main():
     from screentime.enforcer import Enforcer
     from screentime.desktop_scanner import scan_desktop_files
     from screentime.notifier import DaemonNotifier
+    from screentime.ipc_server import IpcServer
 
     db = Database(config.DB_PATH)
     db.initialize_schema()
     db.close_stale_sessions()
     log.info("Database: %s", config.DB_PATH)
+
+    ipc = IpcServer(db)
+    ipc.start()
+    log.info("IPC server started")
 
     # Read kid username from DB; SCREENTIME_USER env var can override for testing.
     # Never use USER/LOGNAME — daemon runs as root so those would return "root".
@@ -60,6 +65,7 @@ def main():
         enforcer.stop()
         rescan_stop.set()
         tracker.flush_all()
+        ipc.stop()
         stop_event.set()
 
     signal.signal(signal.SIGTERM, shutdown)

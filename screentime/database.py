@@ -44,12 +44,15 @@ class Database:
         return conn
 
     def _fix_permissions(self):
-        """Ensure DB file and directory are writable by all users on this machine."""
+        """Lock down DB so only root can read/write it.
+        The directory is 755 (world-traversable) so /run/screentime/ is reachable,
+        but the DB file itself is 600 — the child user cannot read, write, or delete it.
+        """
         try:
-            self.path.chmod(0o666)
-            self.path.parent.chmod(0o777)
+            self.path.chmod(0o600)
+            self.path.parent.chmod(0o755)
         except PermissionError:
-            pass  # Already set correctly by whoever owns it
+            pass  # Already correct, or running without root (dev mode)
 
     def initialize_schema(self):
         with self._connect() as conn:

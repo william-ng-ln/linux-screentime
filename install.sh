@@ -52,12 +52,14 @@ if [ ! -d "$INSTALL_DIR/.venv" ]; then
 fi
 "$INSTALL_DIR/.venv/bin/pip" install -q psutil
 
-# Create DB directory — world-writable so any user can run the admin app
+# Create DB directory — only root can write; child cannot delete the DB file
 echo "[3/7] Tạo thư mục dữ liệu..."
 mkdir -p /var/lib/screentime
-chmod 777 /var/lib/screentime
-[ -f /var/lib/screentime/screentime.db ] && chmod 666 /var/lib/screentime/screentime.db || true
-[ -f /var/lib/screentime/screentime.db-shm ] && chmod 666 /var/lib/screentime/screentime.db-shm || true
+chmod 755 /var/lib/screentime        # world-traversable, write only for root
+chown root:root /var/lib/screentime
+[ -f /var/lib/screentime/screentime.db ] && { chmod 600 /var/lib/screentime/screentime.db; chown root:root /var/lib/screentime/screentime.db; } || true
+# Remove any leftover WAL artefacts
+rm -f /var/lib/screentime/screentime.db-shm /var/lib/screentime/screentime.db-wal
 
 # Install system daemon service
 echo "[4/7] Cài đặt system daemon service..."
