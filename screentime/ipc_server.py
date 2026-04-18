@@ -48,7 +48,6 @@ class IpcServer(threading.Thread):
     def run(self):
         SOCKET_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Remove stale socket from a previous run
         try:
             SOCKET_PATH.unlink()
         except FileNotFoundError:
@@ -57,7 +56,7 @@ class IpcServer(threading.Thread):
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._server = server
         server.bind(str(SOCKET_PATH))
-        os.chmod(SOCKET_PATH, 0o666)   # world-accessible; auth enforced in protocol
+        os.chmod(SOCKET_PATH, 0o666)
         server.listen(8)
         server.settimeout(1.0)
         log.info("IPC server listening on %s", SOCKET_PATH)
@@ -131,7 +130,6 @@ class IpcServer(threading.Thread):
             if expires is None or now > expires:
                 self._tokens.pop(token, None)
                 return False
-            # Sliding window — refresh on each use
             self._tokens[token] = now + TOKEN_TTL_SECONDS
             return True
 
@@ -156,32 +154,56 @@ class IpcServer(threading.Thread):
                 return self._new_token()
             raise ValueError("Sai mật khẩu")
 
+        # ── Users ─────────────────────────────────────────────────────────────
+        if cmd == "get_users":
+            return [{"id": u.id, "username": u.username, "display_name": u.display_name}
+                    for u in db.get_users()]
+
+        if cmd == "add_user":
+            uid = db.add_user(str(args["username"]), str(args.get("display_name", "")))
+            return uid
+
+        if cmd == "remove_user":
+            db.remove_user(int(args["user_id"]))
+            return None
+
+        if cmd == "update_user":
+            db.update_user(int(args["user_id"]), str(args.get("display_name", "")))
+            return None
+
         # ── Read: apps ────────────────────────────────────────────────────────
         if cmd == "get_all_apps":
-            return [_app_dict(a) for a in db.get_all_apps()]
+            user_id = int(args.get("user_id", 1))
+            return [_app_dict(a) for a in db.get_all_apps(user_id)]
 
         if cmd == "get_app":
-            a = db.get_app(args["desktop_id"])
+            user_id = int(args.get("user_id", 1))
+            a = db.get_app(args["desktop_id"], user_id)
             return _app_dict(a) if a else None
 
         # ── Read: usage ───────────────────────────────────────────────────────
         if cmd == "get_today_usage":
-            return db.get_today_usage()
+            return db.get_today_usage(int(args.get("user_id", 1)))
 
         if cmd == "get_today_usage_including_open":
-            return db.get_today_usage_including_open()
+            return db.get_today_usage_including_open(int(args.get("user_id", 1)))
 
         if cmd == "get_usage_history":
-            return db.get_usage_history(int(args.get("days", 7)))
+            return db.get_usage_history(
+                int(args.get("days", 7)),
+                int(args.get("user_id", 1))
+            )
 
         if cmd == "get_hourly_usage_today":
-            # JSON only supports string keys; convert int keys → str here
-            return {str(k): v
-                    for k, v in db.get_hourly_usage_today(args["desktop_id"]).items()}
+            return {str(k): v for k, v in db.get_hourly_usage_today(
+                args["desktop_id"], int(args.get("user_id", 1))
+            ).items()}
 
         if cmd == "get_daily_usage_for_app":
             return db.get_daily_usage_for_app(
-                args["desktop_id"], int(args.get("days", 30))
+                args["desktop_id"],
+                int(args.get("days", 30)),
+                int(args.get("user_id", 1))
             )
 
         # ── Read: settings ────────────────────────────────────────────────────
@@ -190,7 +212,11 @@ class IpcServer(threading.Thread):
 
         # ── Write: apps ───────────────────────────────────────────────────────
         if cmd == "set_app_allowed":
-            db.set_app_allowed(args["desktop_id"], bool(args["allowed"]))
+            db.set_app_allowed(
+                args["desktop_id"],
+                bool(args["allowed"]),
+                int(args.get("user_id", 1))
+            )
             return None
 
         if cmd == "set_app_schedule":
@@ -198,6 +224,7 @@ class IpcServer(threading.Thread):
                 args["desktop_id"],
                 int(args["daily_limit_minutes"]),
                 str(args["limit_schedule"]),
+                int(args.get("user_id", 1))
             )
             return None
 
@@ -208,12 +235,16 @@ class IpcServer(threading.Thread):
 
         if cmd == "set_password":
             db.set_password(str(args["new_password"]))
-            self._revoke_all_tokens()   # invalidate all sessions after password change
+            self._revoke_all_tokens()
             return None
 
         # ── Write: scan ───────────────────────────────────────────────────────
         if cmd == "scan_apps":
-            return scan_desktop_files(db)
+            user_id = int(args.get("user_id", 1))
+            users = db.get_users()
+            user = next((u for u in users if u.id == user_id), None)
+            username = user.username if user else ""
+            return scan_desktop_files(db, user_id, username)
 
         raise ValueError(f"Lệnh không hợp lệ: {cmd!r}")
 
@@ -229,5 +260,6 @@ def _app_dict(a) -> dict:
         "daily_limit_minutes": a.daily_limit_minutes,
         "exec_args": a.exec_args,
         "limit_schedule": a.limit_schedule,
+        "user_id": a.user_id,
         "id": a.id,
     }

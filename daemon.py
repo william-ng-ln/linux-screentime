@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Screen Time — root daemon. Enforces screen time for TARGET_USER."""
+"""Screen Time — root daemon. Enforces screen time for all configured users."""
 
 import os
 import sys
@@ -32,29 +32,16 @@ def main():
     ipc.start()
     log.info("IPC server started")
 
-    # Read kid username from DB; SCREENTIME_USER env var can override for testing.
-    # Never use USER/LOGNAME — daemon runs as root so those would return "root".
-    kid_user = os.environ.get("SCREENTIME_USER", "") or db.get_setting("kid_user", "")
-    if not kid_user:
-        log.warning("Kid username not configured yet. Set it in the admin Settings tab.")
-        # Keep running so it's ready once configured; poll DB every 30s
-        import time
-        while not kid_user:
-            time.sleep(30)
-            kid_user = db.get_setting("kid_user", "")
-            if kid_user:
-                log.info("Kid username now configured: %s", kid_user)
-
-    log.info("Monitoring user: %s", kid_user)
-
-    log.info("Scanning desktop files...")
-    os.environ["SCREENTIME_USER"] = kid_user
-    # Reload config so TARGET_USER picks it up
-    config.TARGET_USER = kid_user
-    scan_desktop_files(db)
+    # Scan desktop files for each configured user
+    users = db.get_users()
+    if not users:
+        log.warning("No child users configured yet. Add users in the admin Settings.")
+    for user in users:
+        log.info("Scanning desktop files for user: %s", user.username)
+        scan_desktop_files(db, user.id, user.username)
 
     tracker = TimeTracker(db)
-    notifier = DaemonNotifier(kid_user)
+    notifier = DaemonNotifier()
     enforcer = Enforcer(db, tracker, signals=notifier)
 
     stop_event = threading.Event()
@@ -76,7 +63,9 @@ def main():
     def periodic_rescan():
         while not rescan_stop.wait(config.DESKTOP_SCAN_INTERVAL):
             log.info("Periodic desktop rescan...")
-            scan_desktop_files(db)
+            for user in db.get_users():
+                scan_desktop_files(db, user.id, user.username)
+            enforcer.force_refresh()
 
     rescan_thread = threading.Thread(target=periodic_rescan, name="rescan", daemon=True)
     rescan_thread.start()

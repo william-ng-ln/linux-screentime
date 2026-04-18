@@ -14,19 +14,20 @@ class TimeTracker:
     def __init__(self, db: Database):
         self.db = db
         self._lock = Lock()
-        # {pid: {'desktop_id': str, 'start': float, 'last_seen': float}}
+        # {pid: {'desktop_id': str, 'user_id': int, 'start': float, 'last_seen': float}}
         self._active: dict[int, dict] = {}
 
-    def tick(self, pid: int, desktop_id: str):
+    def tick(self, pid: int, desktop_id: str, user_id: int):
         now = time.time()
         with self._lock:
             if pid not in self._active:
                 self._active[pid] = {
                     "desktop_id": desktop_id,
+                    "user_id": user_id,
                     "start": now,
                     "last_seen": now,
                 }
-                self.db.open_session(desktop_id, pid, now)
+                self.db.open_session(desktop_id, pid, now, user_id)
             else:
                 self._active[pid]["last_seen"] = now
 
@@ -41,22 +42,22 @@ class TimeTracker:
                 self.db.close_session(pid, last)
                 log.debug("Closed session pid=%d app=%s", pid, entry["desktop_id"])
 
-    def get_in_flight_seconds(self) -> dict[str, float]:
-        """Returns additional seconds not yet flushed to DB for today's sessions."""
+    def get_in_flight_seconds(self, user_id: int) -> dict[str, float]:
+        """Returns seconds not yet flushed to DB for today's sessions for a user."""
         now = time.time()
-        today = date.today().isoformat()
         result: dict[str, float] = {}
         with self._lock:
             for entry in self._active.values():
-                elapsed = now - entry["start"]
-                desktop_id = entry["desktop_id"]
-                result[desktop_id] = result.get(desktop_id, 0) + elapsed
+                if entry["user_id"] == user_id:
+                    elapsed = now - entry["start"]
+                    desktop_id = entry["desktop_id"]
+                    result[desktop_id] = result.get(desktop_id, 0) + elapsed
         return result
 
-    def get_today_total(self, desktop_id: str) -> float:
-        """Total seconds used today (DB + in-flight)."""
-        db_usage = self.db.get_today_usage()
-        in_flight = self.get_in_flight_seconds()
+    def get_today_total(self, desktop_id: str, user_id: int) -> float:
+        """Total seconds used today (DB + in-flight) for a specific user."""
+        db_usage = self.db.get_today_usage(user_id)
+        in_flight = self.get_in_flight_seconds(user_id)
         return db_usage.get(desktop_id, 0) + in_flight.get(desktop_id, 0)
 
     def flush_all(self):

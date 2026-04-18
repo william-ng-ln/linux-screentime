@@ -139,37 +139,37 @@ class _FakeSignal:
 class DaemonNotifier:
     """Duck-typed replacement for EnforcerSignals for use in the root daemon (no Qt)."""
 
-    def __init__(self, username: str):
-        self._username = username
-        # Cooldown: {app_name: last_notify_timestamp} — prevents overlay spam
-        self._last_overlay: dict[str, float] = {}
+    def __init__(self):
+        # Cooldown: {(username, app_name): last_notify_timestamp} — prevents overlay spam
+        self._last_overlay: dict[tuple, float] = {}
 
         self.warn_approaching = _FakeSignal(self._on_warn)
         self.time_up = _FakeSignal(self._on_time_up)
         self.app_blocked = _FakeSignal(self._on_blocked)
 
-    def _cooldown_ok(self, app_name: str) -> bool:
+    def _cooldown_ok(self, username: str, app_name: str) -> bool:
         """Return True if enough time has passed since the last overlay for this app."""
         now = time.monotonic()
-        last = self._last_overlay.get(app_name, 0.0)
+        key = (username, app_name)
+        last = self._last_overlay.get(key, 0.0)
         if now - last >= _OVERLAY_COOLDOWN:
-            self._last_overlay[app_name] = now
+            self._last_overlay[key] = now
             return True
         return False
 
-    def _on_warn(self, name: str, mins: int, app_icon: str = ""):
+    def _on_warn(self, username: str, name: str, mins: int, app_icon: str = ""):
         _notify_as_user(
-            self._username,
+            username,
             "Sắp hết giờ",
             f'"{name}" còn {mins} phút hôm nay.',
             urgency="normal",
             icon=_resolve_notify_icon(app_icon),
         )
 
-    def _on_time_up(self, name: str):
-        if self._cooldown_ok(name):
-            _show_overlay_as_user(self._username, "time_up", name)
+    def _on_time_up(self, username: str, name: str):
+        if self._cooldown_ok(username, name):
+            _show_overlay_as_user(username, "time_up", name)
 
-    def _on_blocked(self, name: str):
-        if self._cooldown_ok(name):
-            _show_overlay_as_user(self._username, "blocked", name)
+    def _on_blocked(self, username: str, name: str):
+        if self._cooldown_ok(username, name):
+            _show_overlay_as_user(username, "blocked", name)

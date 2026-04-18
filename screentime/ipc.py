@@ -10,6 +10,7 @@ TOKEN_TTL_SECONDS = 8 * 3600   # session token valid for 8 hours (sliding window
 # Commands that do NOT require an auth token (safe to expose to any user)
 READ_COMMANDS = frozenset({
     "authenticate",
+    "get_users",
     "get_all_apps",
     "get_app",
     "get_today_usage",
@@ -22,6 +23,9 @@ READ_COMMANDS = frozenset({
 
 # Commands that require a valid session token
 WRITE_COMMANDS = frozenset({
+    "add_user",
+    "remove_user",
+    "update_user",
     "set_app_allowed",
     "set_app_schedule",
     "set_setting",

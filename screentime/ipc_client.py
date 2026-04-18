@@ -17,7 +17,7 @@ import socket
 from typing import Optional
 
 from .ipc import SOCKET_PATH
-from .database import AppRecord
+from .database import AppRecord, User
 
 log = logging.getLogger(__name__)
 
@@ -69,13 +69,11 @@ class AdminClient:
         return resp.get("data")
 
     def _write(self, cmd: str, **args) -> object:
-        """Call a write command — automatically injects the session token."""
         return self._call(cmd, token=self._token or "", **args)
 
     # ── Auth ──────────────────────────────────────────────────────────────────
 
     def check_password(self, password: str) -> bool:
-        """Authenticate against the daemon. Stores the session token on success."""
         try:
             token = self._call("authenticate", password=password)
             if token:
@@ -85,47 +83,72 @@ class AdminClient:
         except RuntimeError as e:
             if "Sai mật khẩu" in str(e):
                 return False
-            raise   # re-raise connection errors so the UI can show them
+            raise
 
     def logout(self):
-        """Discard the session token (call when locking the admin window)."""
         self._token = None
+
+    # ── Users ─────────────────────────────────────────────────────────────────
+
+    def get_users(self) -> list[User]:
+        data = self._call("get_users") or []
+        return [User(id=d["id"], username=d["username"],
+                     display_name=d.get("display_name", ""))
+                for d in data]
+
+    def add_user(self, username: str, display_name: str = "") -> int:
+        return int(self._write("add_user", username=username,
+                               display_name=display_name) or 0)
+
+    def remove_user(self, user_id: int):
+        self._write("remove_user", user_id=user_id)
+
+    def update_user(self, user_id: int, display_name: str):
+        self._write("update_user", user_id=user_id, display_name=display_name)
 
     # ── Apps ──────────────────────────────────────────────────────────────────
 
-    def get_all_apps(self) -> list[AppRecord]:
-        return [_to_app(d) for d in (self._call("get_all_apps") or [])]
+    def get_all_apps(self, user_id: int) -> list[AppRecord]:
+        return [_to_app(d) for d in
+                (self._call("get_all_apps", user_id=user_id) or [])]
 
-    def get_app(self, desktop_id: str) -> Optional[AppRecord]:
-        data = self._call("get_app", desktop_id=desktop_id)
+    def get_app(self, desktop_id: str, user_id: int) -> Optional[AppRecord]:
+        data = self._call("get_app", desktop_id=desktop_id, user_id=user_id)
         return _to_app(data) if data else None
 
-    def set_app_allowed(self, desktop_id: str, allowed: bool):
-        self._write("set_app_allowed", desktop_id=desktop_id, allowed=allowed)
+    def set_app_allowed(self, desktop_id: str, allowed: bool, user_id: int):
+        self._write("set_app_allowed", desktop_id=desktop_id,
+                    allowed=allowed, user_id=user_id)
 
-    def set_app_schedule(self, desktop_id: str,
-                         daily_limit_minutes: int, limit_schedule: str):
+    def set_app_schedule(self, desktop_id: str, daily_limit_minutes: int,
+                         limit_schedule: str, user_id: int):
         self._write("set_app_schedule",
                     desktop_id=desktop_id,
                     daily_limit_minutes=daily_limit_minutes,
-                    limit_schedule=limit_schedule)
+                    limit_schedule=limit_schedule,
+                    user_id=user_id)
 
     # ── Usage ─────────────────────────────────────────────────────────────────
 
-    def get_today_usage_including_open(self) -> dict[str, float]:
-        return self._call("get_today_usage_including_open") or {}
+    def get_today_usage_including_open(self, user_id: int) -> dict[str, float]:
+        return self._call("get_today_usage_including_open",
+                          user_id=user_id) or {}
 
-    def get_usage_history(self, days: int = 7) -> list[dict]:
-        return self._call("get_usage_history", days=days) or []
+    def get_usage_history(self, days: int, user_id: int) -> list[dict]:
+        return self._call("get_usage_history", days=days,
+                          user_id=user_id) or []
 
-    def get_hourly_usage_today(self, desktop_id: str) -> dict[int, float]:
-        raw = self._call("get_hourly_usage_today", desktop_id=desktop_id) or {}
-        return {int(k): v for k, v in raw.items()}   # JSON keys are always strings
+    def get_hourly_usage_today(self, desktop_id: str,
+                               user_id: int) -> dict[int, float]:
+        raw = self._call("get_hourly_usage_today",
+                         desktop_id=desktop_id, user_id=user_id) or {}
+        return {int(k): v for k, v in raw.items()}
 
-    def get_daily_usage_for_app(self, desktop_id: str,
-                                days: int = 30) -> dict[str, float]:
+    def get_daily_usage_for_app(self, desktop_id: str, days: int,
+                                user_id: int) -> dict[str, float]:
         return self._call("get_daily_usage_for_app",
-                          desktop_id=desktop_id, days=days) or {}
+                          desktop_id=desktop_id, days=days,
+                          user_id=user_id) or {}
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
@@ -141,10 +164,10 @@ class AdminClient:
 
     # ── Scan ──────────────────────────────────────────────────────────────────
 
-    def scan_apps(self) -> int:
-        return int(self._write("scan_apps") or 0)
+    def scan_apps(self, user_id: int) -> int:
+        return int(self._write("scan_apps", user_id=user_id) or 0)
 
-    # ── Compat stubs (daemon-only operations, not needed by the GUI) ──────────
+    # ── Compat stubs ──────────────────────────────────────────────────────────
 
     def initialize_schema(self):
         pass
@@ -162,4 +185,5 @@ def _to_app(d: dict) -> AppRecord:
         id=d.get("id"),
         exec_args=d.get("exec_args", ""),
         limit_schedule=d.get("limit_schedule", ""),
+        user_id=int(d.get("user_id", 1)),
     )

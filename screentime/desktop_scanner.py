@@ -46,13 +46,13 @@ EXCLUDED_DESKTOP_IDS = {
 }
 
 
-def _get_desktop_dirs() -> list[Path]:
+def _get_desktop_dirs(username: str = "") -> list[Path]:
     dirs = []
 
-    # When running as root, scan the target user's home; otherwise use current user's home
-    if os.getuid() == 0 and config.TARGET_USER:
+    target = username or (config.TARGET_USER if os.getuid() == 0 else "")
+    if target:
         try:
-            user_home = Path(pwd.getpwnam(config.TARGET_USER).pw_dir)
+            user_home = Path(pwd.getpwnam(target).pw_dir)
         except KeyError:
             user_home = Path.home()
     else:
@@ -156,9 +156,9 @@ def _parse_exec(exec_str: str) -> str:
     return resolved
 
 
-def scan_desktop_files(db: Database) -> int:
+def scan_desktop_files(db: Database, user_id: int = 1, username: str = "") -> int:
     """Scan all .desktop files and upsert into DB. Returns count of new/updated apps."""
-    dirs = _get_desktop_dirs()
+    dirs = _get_desktop_dirs(username)
     seen: dict[str, AppRecord] = {}
 
     for d in dirs:
@@ -170,6 +170,7 @@ def scan_desktop_files(db: Database) -> int:
             try:
                 app = _parse_desktop_file(desktop_file, desktop_id)
                 if app:
+                    app.user_id = user_id
                     seen[desktop_id] = app
             except Exception as e:
                 log.debug("Skipping %s: %s", desktop_file, e)
@@ -178,7 +179,7 @@ def scan_desktop_files(db: Database) -> int:
         db.upsert_application(app)
 
     # Remove DB entries that no longer exist on disk
-    db.remove_unlisted_apps(set(seen.keys()))
+    db.remove_unlisted_apps(set(seen.keys()), user_id)
 
     count = len(seen)
     log.info("Desktop scan complete: %d applications found", count)
